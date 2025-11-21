@@ -8,17 +8,23 @@ int run = 1;
 
 int evaluate(char *cmd, char *res)
 {
-	if(!strncmp(cmd, "exit", strlen("exit")))
+	int ret = 1;
+	
+	if(!strncmp(cmd, "echo ", strlen("echo ")))
 	{
+		snprintf(res, BUFSIZE, "%s\n", cmd + 5);
+	}
+	else if(!strncmp(cmd, "exit", strlen("exit")))
+	{
+		ret = 0;
 		run = 0;
-		return(0);
 	}
 	else
 	{
 		snprintf(res, BUFSIZE, "%s: command not found\n", cmd);
 	}
 
-	return(1);
+	return(ret);
 }
 
 void repl(void)

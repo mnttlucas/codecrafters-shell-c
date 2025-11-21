@@ -4,15 +4,29 @@
 
 #define BUFSIZE 256
 
-int main(int argc, char **argv) {
-	char input_buf[BUFSIZE];
+void repl(void)
+{
+	/* Loop */
+	while(1)
+	{
+		char input_buf[BUFSIZE];
+	
+		/* Read */
+		printf("$ ");
+		fgets(input_buf, BUFSIZE, stdin);
+		input_buf[strlen(input_buf) - 1] = '\0';
+	
+		/* Eval */
+		
+		/* Print */
+		printf("%s: command not found\n", input_buf);
+	}
+}
 
+int main(int argc, char **argv) {
 	setbuf(stdout, NULL);
 
-	printf("$ ");
-	fgets(input_buf, BUFSIZE, stdin);
-	input_buf[strlen(input_buf) - 1] = '\0';
-	printf("%s: command not found\n", input_buf);
+	repl();
 
 	return(0);
 }

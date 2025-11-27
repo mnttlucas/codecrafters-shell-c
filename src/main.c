@@ -1,21 +1,103 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
-#define BUFSIZE 256
+typedef struct {
+	char **items;
+	size_t count;
+	size_t capacity;
+} da_t;
+
+#define BASE_CAPACITY 4
+#define BUFSIZE 2048
 #define CMDSIZE 16
+#define CMDPATHSIZE 128
 #define NB_BUILTIN_COMMANDS 3
 
+#define CMD_FAILURE -1
 #define CMD_EXIT 0
 #define CMD_SUCCESS 1
+
+#define CMD_NOT_FOUND 0
+#define CMD_FOUND 1
 
 char builtin_commands[NB_BUILTIN_COMMANDS][CMDSIZE] = {"echo", "exit", "type"};
 int run = 1;
 
+void da_append(da_t *da, char *item)
+{
+	if(da -> count >= da -> capacity)
+	{
+
+		da -> capacity *= 2;
+		da -> items = realloc(da -> items, da -> capacity * sizeof(*(da -> items)));
+	}
+
+	da -> items[(da -> count)++] = strdup(item);
+}
+
+void da_init(da_t *da)
+{
+	da -> count = 0;
+	da -> capacity = BASE_CAPACITY;
+	da -> items = malloc(da -> capacity * sizeof(*(da -> items)));
+}
+
+void da_free(da_t *da)
+{
+	int i;
+
+	for(i = 0; i < da -> count; i++)
+	{
+		free((da -> items)[i]);
+	}
+}
+
+void tokenize_cmd(da_t *da, char *cmd)
+{
+	char *tmp, *tok;
+	tmp = strdup(cmd);
+	tok = strtok(tmp, " ");
+
+	while(tok)
+	{
+		da_append(da, tok);
+		tok = strtok(NULL, " ");
+	}
+	
+	free(tmp);
+}
+
+int cmd_exists(char *cmd, char *res)
+{
+	char *dir, *path;
+
+	path = strdup(getenv("PATH"));
+	if(path)
+	{
+		dir = strtok(path, ":");
+		while(dir)
+		{
+			snprintf(res, BUFSIZE, "%s/%s", dir, cmd);
+			if(!access(res, X_OK))
+			{
+				free(path);
+				return(CMD_FOUND);
+			}
+			dir = strtok(NULL, ":");
+		}
+		free(path);
+	}
+
+	return(CMD_NOT_FOUND);
+}
+
 int execute_echo(char *cmd, char *res)
 {
-	snprintf(res, BUFSIZE, "%s\n", cmd + strlen("echo "));
+	snprintf(res, BUFSIZE, "%s\n", cmd + 5);
 	return(CMD_SUCCESS);
 }
 
@@ -25,64 +107,113 @@ int execute_exit()
 	return(CMD_EXIT);
 }
 
-int execute_type(char *cmd, char *res)
+int execute_type(da_t *da, char *res)
 {
-	char *dir, *path, relative[BUFSIZE];
+	char relative[CMDPATHSIZE];
 	int i;
 
 	for(i = 0; i < NB_BUILTIN_COMMANDS; i++)
 	{
-		if((!strncmp(builtin_commands[i], cmd + strlen("type "), strlen(builtin_commands[i]))))
+		if((!strncmp(builtin_commands[i], (da -> items)[1], strlen(builtin_commands[i]))))
 		{
-			snprintf(res, BUFSIZE, "%s is a shell builtin\n", cmd + strlen("type "));
+			snprintf(res, BUFSIZE, "%s is a shell builtin\n", builtin_commands[i]);
 			return(CMD_SUCCESS);
 		}
 	}
 
-	path = strdup(getenv("PATH"));
-	if(path)
+	if(cmd_exists((da -> items)[1], relative))
 	{
-		dir = strtok(path, ":");
-		while(dir)
-		{
-			snprintf(relative, BUFSIZE, "%s/%s", dir, cmd + strlen("type "));
-			if(!access(relative, X_OK))
-			{
-				snprintf(res, BUFSIZE, "%s is %s\n", cmd + strlen("type "), relative);
-				free(path);
-				return(CMD_SUCCESS);
-			}
-			dir = strtok(NULL, ":");
-		}
-		free(path);
+		snprintf(res, BUFSIZE, "%s is %s\n", (da -> items)[1], relative);
+		return(CMD_SUCCESS);
 	}
 
-	snprintf(res, BUFSIZE, "%s: not found\n", cmd + strlen("type "));
+	snprintf(res, BUFSIZE, "%s: not found\n", (da -> items)[1]);
 	return(CMD_SUCCESS);
 }
 
 int evaluate(char *cmd, char *res)
 {
-	int ret;
+	char **args, path[CMDPATHSIZE];
+	da_t da;
+	int i;
+	int ret, status;
+	pid_t pid;
+
+	da_init(&da);
+	tokenize_cmd(&da, cmd);
 	
-	if(!strncmp(cmd, "echo ", strlen("echo ")))
+	if(!strncmp(da.items[0], "echo", strlen("echo")))
 	{
-		ret = execute_echo(cmd, res);
+		if(da.count >= 2)
+		{
+			ret = execute_echo(cmd, res);
+		}
+		else
+		{
+			fprintf(stderr, "[!] Usage : echo xyz\n");
+			ret = CMD_FAILURE;
+		}
 	}
-	else if(!strncmp(cmd, "exit", strlen("exit")))
+	else if(!strncmp(da.items[0], "exit", strlen("exit")))
 	{
-		ret = execute_exit();
+		if(da.count == 1 || da.count == 2)
+		{
+			ret = execute_exit();
+		}
+		else
+		{
+			fprintf(stderr, "[!] Usage : exit [code]\n");
+			ret = CMD_FAILURE;
+		}
 	}
-	else if(!strncmp(cmd, "type ", strlen("type ")))
+	else if(!strncmp(da.items[0], "type", strlen("type")))
 	{
-		ret = execute_type(cmd, res);
+		if(da.count == 2)
+		{
+			ret = execute_type(&da, res);
+		}
+		else
+		{
+			fprintf(stderr, "[!] Usage : type command\n");
+			ret = CMD_FAILURE;
+		}
 	}
 	else
 	{
-		snprintf(res, BUFSIZE, "%s: command not found\n", cmd);
-		ret = CMD_SUCCESS;
+		if(cmd_exists((da.items)[0], path))
+		{
+			args = (char **) malloc((da.count + 1) * sizeof(*(da.items)));
+			for(i = 0; i < da.count; i++)
+			{
+				args[i] = strdup((da.items)[i]);
+			}
+			args[i] = NULL;
+			
+			pid = fork();
+
+			if(pid == 0)
+			{
+				execv(path, args);
+			}
+			else if(pid > 0)
+			{
+				waitpid(pid, &status, 0);
+				ret = CMD_SUCCESS;
+			}
+			else
+			{
+				fprintf(stderr, "[!] Error : fork()");
+				ret = CMD_FAILURE;
+			}
+		}
+		else
+		{
+			snprintf(res, BUFSIZE, "%s: command not found\n", da.items[0]);
+			ret = CMD_SUCCESS;
+		}
 	}
 
+	da_free(&da);
 	return(ret);
 }
 
@@ -100,7 +231,7 @@ void repl(void)
 		input_buf[strlen(input_buf) - 1] = '\0';
 	
 		/* Eval */
-		if(evaluate(input_buf, output_buf))
+		if(evaluate(input_buf, output_buf) == CMD_SUCCESS)
 		{
 			/* Print */
 			printf("%s", output_buf);
@@ -108,10 +239,9 @@ void repl(void)
 	}
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char **argv)
+{
 	setbuf(stdout, NULL);
-
 	repl();
-
 	return(0);
 }

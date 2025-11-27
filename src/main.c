@@ -15,7 +15,7 @@ typedef struct {
 #define BUFSIZE 2048
 #define CMDSIZE 16
 #define CMDPATHSIZE 128
-#define NB_BUILTIN_COMMANDS 3
+#define NB_BUILTIN_COMMANDS 4
 
 #define CMD_FAILURE -1
 #define CMD_EXIT 0
@@ -24,7 +24,7 @@ typedef struct {
 #define CMD_NOT_FOUND 0
 #define CMD_FOUND 1
 
-char builtin_commands[NB_BUILTIN_COMMANDS][CMDSIZE] = {"echo", "exit", "type"};
+char builtin_commands[NB_BUILTIN_COMMANDS][CMDSIZE] = {"echo", "exit", "pwd", "type"};
 int run = 1;
 
 void da_append(da_t *da, char *item)
@@ -107,6 +107,20 @@ int execute_exit()
 	return(CMD_EXIT);
 }
 
+int execute_pwd(char *res)
+{
+	if(getcwd(res, BUFSIZE))
+	{
+		res[strlen(res) + 1] = '\0';
+		res[strlen(res)] = '\n';
+		return(CMD_SUCCESS);
+	}
+	else
+	{
+		return(CMD_FAILURE);
+	}
+}
+
 int execute_type(da_t *da, char *res)
 {
 	char relative[CMDPATHSIZE];
@@ -142,7 +156,7 @@ int evaluate(char *cmd, char *res)
 	da_init(&da);
 	tokenize_cmd(&da, cmd);
 	
-	if(!strncmp(da.items[0], "echo", strlen("echo")))
+	if(!strncmp((da.items)[0], "echo", strlen("echo")))
 	{
 		if(da.count >= 2)
 		{
@@ -154,7 +168,7 @@ int evaluate(char *cmd, char *res)
 			ret = CMD_FAILURE;
 		}
 	}
-	else if(!strncmp(da.items[0], "exit", strlen("exit")))
+	else if(!strncmp((da.items)[0], "exit", strlen("exit")))
 	{
 		if(da.count == 1 || da.count == 2)
 		{
@@ -166,7 +180,19 @@ int evaluate(char *cmd, char *res)
 			ret = CMD_FAILURE;
 		}
 	}
-	else if(!strncmp(da.items[0], "type", strlen("type")))
+	else if(!strncmp((da.items)[0], "pwd", strlen("pwd")))
+	{
+		if(da.count == 1)
+		{
+			ret = execute_pwd(res);
+		}
+		else
+		{
+			fprintf(stderr, "[!] Usage : pwd\n");
+			ret = CMD_FAILURE;
+		}
+	}
+	else if(!strncmp((da.items)[0], "type", strlen("type")))
 	{
 		if(da.count == 2)
 		{
